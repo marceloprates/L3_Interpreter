@@ -65,7 +65,7 @@ object SemanticAnalyzer
           }
       }
     }
-  /*
+
   def Step(e: Expr): Option[Expr] =
   {
     TypeCheck(e,Map[identifier,Type]()) match
@@ -155,12 +155,31 @@ object SemanticAnalyzer
                     }
                   }
                 }
+                case try_with(e1,e2) =>
+                {
+                  if(e1 IsValue) 
+                  {
+                    Some(e1)
+                  }
+                  else
+                  {
+                    e1 match
+                    {
+                      case raise => Some(e2)
+                      case _ =>
+                        Step(e1) match
+                        {
+                          case Some(e1Lin) => try_with(e1Lin,e2)
+                          case _ => None
+                        }
+                    }
+                  }
+                }
               }
             }
         }
     }
   }
-  */
 
   def Substitute(e: Expr, x: identifier, v: Expr): Expr = // TO DO
     {
@@ -169,10 +188,39 @@ object SemanticAnalyzer
         case identifier(id) => v
         case N(n) => N(n)
         case B(b) => B(b)
-        case operation(e1,e2,op) => // TO DO
+        case operation(e1,e2,op) => operation(Substitute(e1,x,v),Substitute(e2,x,v),op)
+        case if_then_else(e1,e2,e3) => if_then_else(Substitute(e1,x,v),Substitute(e2,x,v),Substitute(e3,x,v))
+        case apply_function(define_function(y,t,e1),e2) =>
+        {
+          if(y Equals x)
+          {
+            apply_function(define_function(y,t,e1),Substitute(e2,x,v))
+          }
+          else
+          {
+            apply_function(define_function(y,t,Substitute(e1,x,v)),Substitute(e2,x,v))
+          }
+        }
+        case identifier(id) =>
+        {
+          if(identifier(id) Equals x) v
+          else identifier(id)
+        }
+        case let_in_end(y,t,e1,e2) =>
+        {
+          if(y Equals x)
+          {
+            let_in_end(y,t,e1,e2)
+          }
+          else
+          {
+            let_in_end(y,t,Substitute(e1,x,v),Substitute(e2,x,v))
+          }
+        }
+        case raise => raise
+        case try_with(e1,e2) => try_with(Substitute(e1,x,v),Substitute(e2,x,v))
       }
     }
-
 }
 
 case class Type
