@@ -81,7 +81,7 @@ object SemanticAnalyzer
         }
     }
   }
-  */ 
+  */
 
 }
 
