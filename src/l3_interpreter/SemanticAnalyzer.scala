@@ -65,6 +65,24 @@ object SemanticAnalyzer
           }
       }
     }
+  /*
+  def Step(e: Expr): Option[Expr] =
+  {
+    TypeCheck(e,Map[identifier,Type]()) match
+    {
+      case None => None
+      case _ =>
+        e match
+        {
+          case op(N(n1),N(n2),op:plus) => Some(N(n1+n2))
+          case op(N(n1),N(n2),op:greaterOrEqual) => Some(B(n1 >= n2))
+          case op(e1,e2,op) =>
+            (Step)
+        }
+    }
+  }
+  */
+
 }
 
 case class Type
