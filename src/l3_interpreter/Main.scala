@@ -10,8 +10,13 @@ object Main {
   /**
    * @param args the command line arguments
    */
-  def main(args: Array[String]): Unit = {
-    println("Hello, world!")
+  def main(args: Array[String]): Unit = 
+  {
+    
+    var let = let_in_end(identifier("x"),natural(),N(3),identifier("y"))
+    
+    println(SemanticAnalyzer.TypeCheck(let,Map[identifier,Type]()))
+    
   }
 
 }
