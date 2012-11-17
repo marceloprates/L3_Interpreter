@@ -5,193 +5,456 @@
 
 package l3_interpreter
 
+import scala.util.control.Breaks._
+
 object SemanticAnalyzer 
 {
-  def TypeCheck(e: Expr, gamma: Map[identifier,Type]): Option[Type] =
+  var ftvCount = 0
+  
+  def TypeCheck(e: Expr, gamma: Map[identifier,Type]): Option[(Type,Set[type_equation])] =
     {
       e match
       {
-        case N(n) => Some(natural())
-        case B(b) => Some(boolean())
-        case op(e1,e2,op:plus) =>
+        case N(n) => Some(natural(),Set[type_equation]())
+        case B(b) => Some(boolean(),Set[type_equation]())
+        case operation(e1,e2,op:plus) =>
           (TypeCheck(e1,gamma),TypeCheck(e2,gamma)) match
           {
-            case (Some(natural()),Some(natural())) => Some(natural())
+            case (Some((t1,c1)),Some((t2,c2))) => Some((natural(),c1 ++ c2 ++ Set(type_equation(t1,natural()), type_equation(t2,natural()))))
             case _ => None
           }
-        case op(e1,e2,op:greaterOrEqual) =>
+        case operation(e1,e2,op:greaterOrEqual) =>
           (TypeCheck(e1,gamma),TypeCheck(e2,gamma)) match
           {
-            case (Some(natural()),Some(natural())) => Some(boolean())
+            case (Some((t1,c1)),Some((t2,c2))) => Some((boolean(),c1 ++ c2 ++ Set(type_equation(t1,natural()), type_equation(t2,natural()))))
             case _ => None
           }
         case if_then_else(e1,e2,e3) =>
           (TypeCheck(e1,gamma),TypeCheck(e2,gamma),TypeCheck(e3,gamma)) match
           {
-            case (Some(boolean()),Some(t1),Some(t2)) => if(t1 == t2) Some(t1) else None
-            case _ => None
-          }
-        case sequence(e1,e2) =>
-          (TypeCheck(e1,gamma),TypeCheck(e2,gamma)) match
-          {
-            case (Some(unit()), Some(t)) => Some(t)
-            case _ => None
-          }
-        case while_do(e1,e2) =>
-          (TypeCheck(e1,gamma),TypeCheck(e2,gamma)) match
-          {
-            case (Some(boolean()), Some(unit())) => Some(unit())
+            case (Some((t1,c1)),Some((t2,c2)),Some((t3,c3))) => Some((t2, c1 ++ c2 ++ c3 ++ Set(type_equation(t1,boolean()),type_equation(t2,t3))))
             case _ => None
           }
         case identifier(id) =>
           {
             if(gamma.contains(identifier(id))) 
-              Some(gamma(identifier(id))) 
+              Some((gamma(identifier(id)),Set[type_equation]()))
             else 
               None
           }
-        case define_function(x,t1,e) =>
-          TypeCheck(e,gamma ++ Map(x -> t1)) match
+        case define_function(x,e) =>
           {
-            case Some(t2) => Some(function(t1,t2))
-            case _ => None
+            var X = NewFTV()
+            
+            TypeCheck(e,gamma ++ Map(x -> X)) match
+            {
+              case Some((t,c)) => Some((function(X,t),c))
+              //case Some(t2) => Some(function(t1,t2))
+              case _ => None
+            }
           }
         case apply_function(e1,e2) =>
+          {
+            var X = NewFTV()
+            
+            (TypeCheck(e1,gamma),TypeCheck(e2,gamma)) match
+            {
+              case (Some((t1,c1)),Some((t2,c2))) => Some((X, c1 ++ c2 ++ Set(type_equation(t1,function(t2,X)))))
+              //case (Some(function(t1,t2)),Some(t3)) => if(t1 == t3) Some(t2) else None
+              //case (Some(any),Some(t3)) => Some(any)
+              case _ => None
+            }
+          }
+        //case let_in_end(x,e1,e2) =>
+        //case raise() => Some(any())
+        case try_with(e1,e2) =>
           (TypeCheck(e1,gamma),TypeCheck(e2,gamma)) match
           {
-            case (Some(function(t1,t2)),Some(t3)) => if(t1 == t3) Some(t2) else None
+            case (Some((t1,c1)),Some((t2,c2))) => Some((t2, c1 ++ c2 ++ Set(type_equation(t1,t2))))
+            //case (Some(any()),Some(t2)) => Some(t2)
+            //case (Some(t1),Some(t2)) => if(t1 equals t2) Some(t2) else None
             case _ => None
           }
-        case let_in_end(x,t,e1,e2) =>
-          (TypeCheck(e1,gamma), TypeCheck(e2, gamma ++ Map(x -> t))) match
+      }
+    }
+  
+  def TypeInfer(e: Expr): Option[Type] =
+    {
+      TypeCheck(e,Map[identifier,Type]()) match
+      { 
+        case Some((t,equations)) =>
           {
-            case (Some(t1),Some(t2)) => if(t1 == t) Some(t2) else None
-            case _ => None
-          }
-        case let_rec_in_end(f,t1,t2,y,e1,e2) =>
-          (TypeCheck(e1, gamma ++ Map(f -> function(t1,t2), y -> t1)), TypeCheck(e2, gamma ++ Map(f -> function(t1,t2)))) match
-          {
-            case (Some(t3),Some(t4)) => if(t3 == t2) Some(t4) else None
-            case _ => None
-          }
-        case define_tuple(e1,e2) =>
-          (TypeCheck(e1,gamma), TypeCheck(e2,gamma)) match
-          {
-            case (Some(t1),Some(t2)) => Some(tuple(t1,t2))
-            case _ => None
-          }
-        case project_1(e) =>
-          TypeCheck(e,gamma) match
-          {
-            case Some(tuple(t1,t2)) => Some(t1)
-            case _ => None
-          }
-        case project_2(e) =>
-          TypeCheck(e,gamma) match
-          {
-            case Some(tuple(t1,t2)) => Some(t2)
-            case _ => None
-          }
-        case define_record(labels_and_expressions) =>
-          {
-            var labels = labels_and_expressions map (x => x._1)
-            var types_or_nones = labels_and_expressions map (x => TypeCheck(x._2,gamma))
-            
-            if(types_or_nones.contains(None))
+            if(!t.FTVs.isEmpty)
               {
-                return None
+                var unified = Unify(equations)
+                
+                unified match
+                {
+                  case Some(u) =>
+                    {
+                      var newT = t
+                      
+                      for(m <- u)
+                        {
+                          newT = newT.Substitute(m._1,m._2)
+                        }
+                        
+                      return Some(newT)
+                    }
+                  case None => return None
+                }
               }
             else
               {
-                var types = types_or_nones map (x => x match{case Some(t) => t})
-                
-                return Some(record(labels zip types))
+                return Some(t)
               }
           }
-        case project_label(lab,e) =>
-          TypeCheck(e,gamma) match
+        case None => None
+      }
+    }
+  
+  def Step(e: Expr): Option[Expr] =
+    {
+      TypeInfer(e) match
+      {
+        case None => None
+        case _ =>
+          e match
           {
-            case Some(record(labels_and_types)) =>
+            // raise propagation rules
+            
+            case operation(raise(),raise(),op) => Some(raise())
+            case operation(raise(),e2,op) => Some(raise())
+            case operation(e1,raise(),op) => Some(raise())
+              
+            case if_then_else(raise(),raise(),raise()) => Some(raise())
+            case if_then_else(raise(),raise(),e3) => Some(raise())
+            case if_then_else(raise(),e2,raise()) => Some(raise())
+            case if_then_else(raise(),e2,e3) => Some(raise())
+            case if_then_else(e1,raise(),raise()) => Some(raise())
+            case if_then_else(e1,raise(),e3) => Some(raise())
+            case if_then_else(e1,e2,raise()) => Some(raise())
+            
+            case apply_function(raise(),raise()) => Some(raise())
+            case apply_function(e1,raise()) => Some(raise())
+              
+            //case let_in_end(x,t,raise(),raise()) => Some(raise())
+            //case let_in_end(x,t,raise(),e2) => Some(raise())
+            //case let_in_end(x,t,e1,raise()) => Some(raise())
+            
+            // regular rules
+            
+            case operation(e1,e2,op) =>
               {
-                labels_and_types.find(x => x._1.equals(lab)) match
+                (e1,e2,op) match
                 {
-                  case Some((l,t)) => Some(t)
+                  case (N(n1),N(n2),op:plus) => Some(N(n1+n2))
+                  case (N(n1),N(n2),op:greaterOrEqual) => Some(B(n1 >= n2))
+                  case (e1,e2,op) =>
+                  {
+                    if(e1 IsValue)
+                    {
+                      Step(e2) match
+                      {
+                        case Some(e2Lin) => Some(operation(e1,e2Lin,op))
+                        case _ => None
+                      }
+                    }
+                    else
+                    {
+                      Step(e1) match
+                      {
+                        case Some(e1Lin) => Some(operation(e1Lin,e2,op))
+                        case _ => None
+                      }
+                    }
+                  }
                   case _ => None
+                }
+              }
+            case if_then_else(e1,e2,e3) =>
+              e1 match
+              {
+                case B(true) => Some(e2)
+                case B(false) => Some(e3)
+                case e1 =>
+                  Step(e1) match
+                  {
+                    case Some(e1Lin) => Some(if_then_else(e1Lin,e2,e3))
+                    case _ => None
+                  }
+              }
+            case apply_function(e1,e2) =>
+              (e1 IsValue, e2 IsValue) match
+              {
+                case (true,true) =>
+                  {
+                    (e1,e2) match
+                    {
+                      case (define_function(x,e),v) => Some(e.Substitute(x,v))
+                      case _ => None
+                    }
+                  }
+                case (false,_) =>
+                  {
+                    Step(e1) match
+                    {
+                      case Some(e1Lin) => Some(apply_function(e1Lin,e2))
+                      case _ => None
+                    }
+                  }
+                case (true,false) =>
+                  {
+                    Step(e2) match
+                    {
+                      case Some(e2Lin) => Some(apply_function(e1,e2Lin))
+                      case _ => None
+                    }
+                  }
+              }
+            case try_with(e1,e2) =>
+              {
+                if(e1 IsValue)
+                {
+                  Some(e1)
+                }
+                else
+                {
+                  e1 match
+                  {
+                    case raise() => Some(e2)
+                    case _ =>
+                      Step(e1) match
+                      {
+                        case Some(e1Lin) => Some(try_with(e1Lin,e2))
+                        case _ => None
+                      }
+                  }
                 }
               }
             case _ => None
           }
-        case attribution(e1,e2) =>
-          (TypeCheck(e1,gamma),TypeCheck(e2,gamma)) match
-          {
-            case (Some(reference(t1)), Some(t2)) => if(t1 == t2) Some(unit()) else None
-            case _ => None
-          }
-        case dereferenciation(e) =>
-          TypeCheck(e,gamma) match
-          {
-            case Some(reference(t)) => Some(t)
-            case _ => None
-          }
-        case referenciation(e) =>
-          TypeCheck(e,gamma) match
-          {
-            case Some(t) => Some(reference(t))
-            case _ => None
-          }
-        //case l()
-        case raise() => Some(Type())
-        case try_with(e1,e2) =>
-          (TypeCheck(e1,gamma),TypeCheck(e2,gamma)) match
-          {
-            case (Some(t1),Some(t2)) => if(t1 canEqual t2) Some(t2) else None
-            case _ => None
-          }
-          
-          
-          
       }
+    }
+  
+  def Eval(e: Expr): Option[Expr] =
+    {
+      Step(e) match
+      {
+        case Some(eLin) => Eval(eLin)
+        case None => Some(e)
+      }
+    }
+  
+  def Substitute(X: ftv, t: Type, c: Set[type_equation]): Set[type_equation] =
+    {
+      var newC = Set[type_equation]()
+      
+      for(equation <- c)
+        {
+          if(!(equation.t1 equals X) || !(equation.t2 equals t))
+            {
+              newC = newC ++ Set(type_equation(equation.t1.Substitute(X,t),equation.t2.Substitute(X,t)))
+            }
+        }
+      
+      return newC
+    }
+    
+  def Unify(c: Set[type_equation]): Option[Map[ftv,Type]] =
+    {
+       var equations = c
+       var substitution = Set[type_equation]()
+       
+       while(!equations.isEmpty)
+         {
+           for(equation <- equations)
+             {
+               equation match
+               {
+                 case type_equation(function(t1,t2),function(t3,t4)) =>
+                   {
+                     equations = equations.filterNot(x => x equals equation)
+                     equations = equations ++ Set(type_equation(t1,t3),type_equation(t2,t4))
+                     //break
+                   }
+                 case type_equation(ftv(id),t) =>
+                   {
+                     (ftv(id) equals t, t.FTVs.contains(ftv(id))) match
+                     {
+                       case (true,_) =>
+                         {
+                           equations = equations.filterNot(x => x equals equation)
+                         }
+                       case (false,true) =>
+                         {
+                           return None
+                         }
+                       case (false, false) =>
+                         {
+                           substitution = Substitute(ftv(id),t,substitution) ++ Set(equation)
+                           equations = equations.filterNot(x => x equals equation)
+                           equations = Substitute(ftv(id),t,equations)
+                           //break
+                         }
+                     }
+                   }
+                 case type_equation(t,ftv(id)) =>
+                   {
+                     (ftv(id) equals t, t.FTVs.contains(ftv(id))) match
+                     {
+                       case (true,_) =>
+                         {
+                           equations = equations.filterNot(x => x equals equation)
+                         }
+                       case (false,true) =>
+                         {
+                           return None
+                         }
+                       case (false, false) =>
+                         {
+                           substitution = Substitute(ftv(id),t,substitution) ++ Set(type_equation(ftv(id),t))
+                           equations = Substitute(ftv(id),t,equations)
+                           //break
+                         }
+                     }
+                   }
+                 case type_equation(t1,t2) =>
+                   {
+                     if(t1 equals t2)
+                       {
+                         equations = equations.filterNot(x => x equals equation)
+                       }
+                   }
+                 case _ => {}
+               }
+             }
+         }
+    
+       var substitution_map = substitution map (x => (x.t1 , x.t2)) toMap
+    
+       return Some(substitution_map.asInstanceOf[Map[ftv,Type]])
+    }
+   
+  def NewFTV(): ftv =
+    {
+      ftvCount = ftvCount + 1
+      
+      return ftv(ftvCount.toString)
     }
 }
 
 case class Type
+{
+  def FTVs(): Set[ftv] =
+    {
+      this match
+      {
+        case ftv(id) => Set(ftv(id))
+        case natural() => Set[ftv]()
+        case boolean() => Set[ftv]()
+        case function(t1,t2) => t1.FTVs ++ t2.FTVs
+        case any() => Set[ftv]()
+      }
+    }
+
+  def Substitute(X: ftv, t: Type): Type =
+    {
+      this match
+      {
+        case natural() => natural()
+        case boolean() => boolean()
+        case function(t1,t2) => function(t1.Substitute(X,t),t2.Substitute(X,t))
+        case any() => any()
+        case ftv(id) => if(ftv(id) equals X) t else ftv(id)
+      }
+    }
+}
 case class natural extends Type
 case class boolean extends Type
-case class unit extends Type
 case class function(t1: Type, t2: Type) extends Type
-case class tuple(t1: Type, t2: Type) extends Type
-case class record(labels_and_types: List[(identifier,Type)]) extends Type
-{
-  def this(labels_and_types: (identifier,Type)*) = this(labels_and_types.toList)
-}
-case class reference(t: Type) extends Type
-case class any() extends Type
+case class any extends Type
+case class ftv(id: String) extends Type
+
+case class type_equation(t1: Type, t2: Type)
 
 abstract class Expr
+{
+  def IsValue(): Boolean =
+  {
+    this match
+    {
+      case N(n) => true
+      case B(b) => true
+      case define_function(x,e) => true
+      case _ => false
+    }
+  }
+  
+  def Substitute(x: identifier, v: Expr): Expr =
+    {
+      this match
+      {
+        case N(n) => N(n)
+        case B(b) => B(b)
+        case operation(e1,e2,op) => operation(e1.Substitute(x,v),e2.Substitute(x,v),op)
+        case define_function(y,e1) => 
+        {
+            if(y equals x)
+            {
+              define_function(y,e1)
+            }
+            else
+            {
+              define_function(y,e1.Substitute(x,v))
+            }
+        }
+        case if_then_else(e1,e2,e3) => if_then_else(e1.Substitute(x,v),e2.Substitute(x,v),e3.Substitute(x,v))
+        case apply_function(e1,e2) =>
+        {
+          apply_function(e1.Substitute(x,v),e2.Substitute(x,v))
+        }
+        case identifier(id) =>
+        {
+          if(identifier(id) equals x) 
+            {
+              v
+            }
+          else 
+            {
+              identifier(id)
+            }
+        }
+        case let_in_end(y,e1,e2) =>
+        {
+          if(y equals x)
+          {
+            let_in_end(y,e1,e2)
+          }
+          else
+          {
+            let_in_end(y,e1.Substitute(x,v),e2.Substitute(x,v))
+          }
+        }
+        case raise() => raise()
+        case try_with(e1,e2) => try_with(e1.Substitute(x,v),e2.Substitute(x,v))
+      }
+    }
+}
 case class N(n: Int) extends Expr
 case class B(b: Boolean) extends Expr
-case class op(e1: Expr, e2: Expr, op: Operator) extends Expr
+case class operation(e1: Expr, e2: Expr, op: Operator) extends Expr
 case class if_then_else(e1: Expr, e2: Expr, e3: Expr) extends Expr
-case class attribution(e1: Expr, e2: Expr) extends Expr
-case class dereferenciation(e: Expr) extends Expr
-case class referenciation(e: Expr) extends Expr
-case class l(address: Int) extends Expr
-case class skip extends Expr
-case class sequence(e1: Expr, e2: Expr) extends Expr
-case class while_do(e1: Expr, e2: Expr) extends Expr
-case class define_function(x: identifier, t: Type, e: Expr) extends Expr
+case class define_function(x: identifier, e: Expr) extends Expr
 case class apply_function(e1: Expr, e2: Expr) extends Expr
 case class identifier(id: String) extends Expr
-case class let_in_end(x: identifier, t: Type, e1: Expr, e2: Expr) extends Expr
-case class let_rec_in_end(f: identifier, t1: Type, t2: Type, y: identifier, e1: Expr, e2: Expr) extends Expr
-case class define_tuple(e1: Expr, e2: Expr) extends Expr
-case class project_1(e: Expr) extends Expr
-case class project_2(e: Expr) extends Expr
-case class define_record(labels_and_expressions: List[(identifier,Expr)]) extends Expr
 {
-  def this(labels_and_expressions: (identifier,Expr)*) = this(labels_and_expressions.toList)
+  override def equals(o: Any): Boolean =
+    {
+      this.id equals (o.asInstanceOf[identifier]).id
+    }
 }
-case class project_label(lab: identifier, e: Expr) extends Expr
+case class let_in_end(x: identifier, e1: Expr, e2: Expr) extends Expr
 case class raise extends Expr
 case class try_with(e1: Expr, e2: Expr) extends Expr
 
