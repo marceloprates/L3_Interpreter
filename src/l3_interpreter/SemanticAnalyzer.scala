@@ -33,6 +33,7 @@ object SemanticAnalyzer
           (TypeCheck(e1,gamma),TypeCheck(e2,gamma),TypeCheck(e3,gamma)) match
           {
             case (Some((t1,c1)),Some((t2,c2)),Some((t3,c3))) => Some((t2, c1 ++ c2 ++ c3 ++ Set(type_equation(t1,boolean()),type_equation(t2,t3))))
+
             case _ => None
           }
         case identifier(id) =>
@@ -73,6 +74,7 @@ object SemanticAnalyzer
             case (Some((t1,c1)),Some((t2,c2))) => Some((t2, c1 ++ c2 ++ Set(type_equation(t1,t2))))
             //case (Some(any()),Some(t2)) => Some(t2)
             //case (Some(t1),Some(t2)) => if(t1 equals t2) Some(t2) else None
+
             case _ => None
           }
       }
