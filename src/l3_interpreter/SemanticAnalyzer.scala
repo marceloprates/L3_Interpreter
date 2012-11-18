@@ -50,7 +50,6 @@ object SemanticAnalyzer
             TypeCheck(e,gamma ++ Map(x -> X)) match
             {
               case Some((t,c)) => Some((function(X,t),c))
-              //case Some(t2) => Some(function(t1,t2))
               case _ => None
             }
           }
@@ -61,20 +60,19 @@ object SemanticAnalyzer
             (TypeCheck(e1,gamma),TypeCheck(e2,gamma)) match
             {
               case (Some((t1,c1)),Some((t2,c2))) => Some((X, c1 ++ c2 ++ Set(type_equation(t1,function(t2,X)))))
-              //case (Some(function(t1,t2)),Some(t3)) => if(t1 == t3) Some(t2) else None
-              //case (Some(any),Some(t3)) => Some(any)
               case _ => None
             }
           }
-        //case let_in_end(x,e1,e2) =>
-        //case raise() => Some(any())
+        case raise() =>
+          {
+            var X = NewFTV()
+            
+            Some(X,Set[type_equation]())
+          }
         case try_with(e1,e2) =>
           (TypeCheck(e1,gamma),TypeCheck(e2,gamma)) match
           {
             case (Some((t1,c1)),Some((t2,c2))) => Some((t2, c1 ++ c2 ++ Set(type_equation(t1,t2))))
-            //case (Some(any()),Some(t2)) => Some(t2)
-            //case (Some(t1),Some(t2)) => if(t1 equals t2) Some(t2) else None
-
             case _ => None
           }
       }
@@ -86,30 +84,28 @@ object SemanticAnalyzer
       { 
         case Some((t,equations)) =>
           {
-            if(!t.FTVs.isEmpty)
-              {
-                var unified = Unify(equations)
-                
-                unified match
+            Unify(equations) match
+            {
+              case Some(unified) =>
                 {
-                  case Some(u) =>
+                  if(t.FTVs.isEmpty)
+                    {
+                      return Some(t)
+                    }
+                  else
                     {
                       var newT = t
                       
-                      for(m <- u)
+                      for(x <- unified)
                         {
-                          newT = newT.Substitute(m._1,m._2)
+                          newT = newT.Substitute(x._1, x._2)
                         }
                         
                       return Some(newT)
                     }
-                  case None => return None
                 }
-              }
-            else
-              {
-                return Some(t)
-              }
+              case None => None
+            }
           }
         case None => None
       }
@@ -244,7 +240,7 @@ object SemanticAnalyzer
       Step(e) match
       {
         case Some(eLin) => Eval(eLin)
-        case None => Some(e)
+        case None => if(e IsValue) Some(e) else None
       }
     }
   
@@ -321,11 +317,23 @@ object SemanticAnalyzer
                          }
                      }
                    }
+                 case type_equation(function(t1,t2),t3) =>
+                   {
+                     return None
+                   }
+                 case type_equation(t1,function(t2,t3)) =>
+                   {
+                     return None
+                   }
                  case type_equation(t1,t2) =>
                    {
                      if(t1 equals t2)
                        {
                          equations = equations.filterNot(x => x equals equation)
+                       }
+                       else if(t1.FTVs.isEmpty && t2.FTVs.isEmpty)
+                       {
+                         return None
                        }
                    }
                  case _ => {}
@@ -346,7 +354,7 @@ object SemanticAnalyzer
     }
 }
 
-case class Type
+abstract case class Type
 {
   def FTVs(): Set[ftv] =
     {
@@ -356,7 +364,6 @@ case class Type
         case natural() => Set[ftv]()
         case boolean() => Set[ftv]()
         case function(t1,t2) => t1.FTVs ++ t2.FTVs
-        case any() => Set[ftv]()
       }
     }
 
@@ -367,7 +374,6 @@ case class Type
         case natural() => natural()
         case boolean() => boolean()
         case function(t1,t2) => function(t1.Substitute(X,t),t2.Substitute(X,t))
-        case any() => any()
         case ftv(id) => if(ftv(id) equals X) t else ftv(id)
       }
     }
@@ -375,7 +381,6 @@ case class Type
 case class natural extends Type
 case class boolean extends Type
 case class function(t1: Type, t2: Type) extends Type
-case class any extends Type
 case class ftv(id: String) extends Type
 
 case class type_equation(t1: Type, t2: Type)

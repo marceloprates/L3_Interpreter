@@ -12,15 +12,15 @@ object Main {
    */
   def main(args: Array[String]): Unit = 
   {
-    var e1 = define_function(identifier("x"),operation(identifier("x"),N(3),plus()))
+    var sum_1 = operation(N(5),N(43),plus())
+    var sum_2 = operation(B(true),N(52),plus())
+    var goe_1 = operation(N(5),N(1),greaterOrEqual())
+    var goe_2 = operation(N(30),B(false),greaterOrEqual())
+    var trywith_1 = try_with(raise(),N(3))
     
-    var e2 = apply_function(e1,N(5))
+    var exprs = List(sum_1,sum_2,goe_1,goe_2,trywith_1)
     
-    var e3 = operation(identifier("x"),N(3),plus())
-    
-    //println(e3.Substitute(identifier("x"), N(5)))
-    
-    println(SemanticAnalyzer.Eval(e2))//TypeInfer(e2))
+    exprs.foreach(x => println("%s | %s | %s".format(x,SemanticAnalyzer.TypeInfer(x),SemanticAnalyzer.Eval(x))))
   }
 
 }
