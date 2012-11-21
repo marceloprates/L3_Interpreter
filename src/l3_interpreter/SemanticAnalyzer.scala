@@ -10,6 +10,7 @@ import scala.util.control.Breaks._
 object SemanticAnalyzer 
 {
   var ftvCount = 0
+  var typeSchemasCount = 0;
   
   def TypeCheck(e: Expr, gamma: Map[identifier,Type]): Option[(Type,Set[type_equation])] =
     {
@@ -88,21 +89,14 @@ object SemanticAnalyzer
             {
               case Some(unified) =>
                 {
-                  if(t.FTVs.isEmpty)
+                  var newT = t
+                  
+                  for(x <- unified)
                     {
-                      return Some(t)
+                      newT = newT.Substitute(x._1, x._2)
                     }
-                  else
-                    {
-                      var newT = t
-                      
-                      for(x <- unified)
-                        {
-                          newT = newT.Substitute(x._1, x._2)
-                        }
-                        
-                      return Some(newT)
-                    }
+                  
+                  return Some(newT)
                 }
               case None => None
             }
@@ -113,11 +107,7 @@ object SemanticAnalyzer
   
   def Step(e: Expr): Option[Expr] =
     {
-      TypeInfer(e) match
-      {
-        case None => None
-        case _ =>
-          e match
+      e match
           {
             // raise propagation rules
             
@@ -135,10 +125,6 @@ object SemanticAnalyzer
             
             case apply_function(raise(),raise()) => Some(raise())
             case apply_function(e1,raise()) => Some(raise())
-              
-            //case let_in_end(x,t,raise(),raise()) => Some(raise())
-            //case let_in_end(x,t,raise(),e2) => Some(raise())
-            //case let_in_end(x,t,e1,raise()) => Some(raise())
             
             // regular rules
             
@@ -232,7 +218,6 @@ object SemanticAnalyzer
               }
             case _ => None
           }
-      }
     }
   
   def Eval(e: Expr): Option[Expr] =
@@ -352,6 +337,13 @@ object SemanticAnalyzer
       
       return ftv(ftvCount.toString)
     }
+
+  def NewTypeSchema(): typeSchema =
+    {
+      typeSchemasCount = typeSchemasCount + 1
+      
+      return typeSchema(typeSchemasCount.toString)
+    }
 }
 
 abstract case class Type
@@ -382,6 +374,7 @@ case class natural extends Type
 case class boolean extends Type
 case class function(t1: Type, t2: Type) extends Type
 case class ftv(id: String) extends Type
+case class typeSchema(id: String) extends Type
 
 case class type_equation(t1: Type, t2: Type)
 

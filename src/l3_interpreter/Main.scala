@@ -17,10 +17,22 @@ object Main {
     var goe_1 = operation(N(5),N(1),greaterOrEqual())
     var goe_2 = operation(N(30),B(false),greaterOrEqual())
     var trywith_1 = try_with(raise(),N(3))
+    var define_1 = define_function(identifier("x"),define_function(identifier("y"),operation(identifier("x"),identifier("y"),plus())))
     
-    var exprs = List(sum_1,sum_2,goe_1,goe_2,trywith_1)
+    var exprs = List(sum_1,sum_2,goe_1,goe_2,trywith_1,define_1)
     
-    exprs.foreach(x => println("%s | %s | %s".format(x,SemanticAnalyzer.TypeInfer(x),SemanticAnalyzer.Eval(x))))
+    for(e <- exprs)
+      {
+        var t = SemanticAnalyzer.TypeInfer(e)
+        
+        var v = t match
+        {
+          case Some(x) => Some(SemanticAnalyzer.Eval(e))
+          case None => None
+        }
+        
+        println("%s | %s | %s".format(e,t,v))
+      }
   }
 
 }
