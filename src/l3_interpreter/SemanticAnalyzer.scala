@@ -5,8 +5,6 @@
 
 package l3_interpreter
 
-import scala.util.control.Breaks._
-
 object SemanticAnalyzer 
 {
   var ftvCount = 0
@@ -64,6 +62,22 @@ object SemanticAnalyzer
               case _ => None
             }
           }
+        case let_in_end(x,e2,e3) =>
+          {
+            var X = NewFTV()
+            
+            TypeCheck(e2,gamma ++ Map(x -> X)) match
+            {
+              case Some((t,c)) =>
+                { 
+                  TypeCheck(e3,gamma ++  Map(x -> X))
+                }
+              case None =>
+                {
+                  None
+                }
+            }
+          }
         case raise() =>
           {
             var X = NewFTV()
@@ -82,6 +96,32 @@ object SemanticAnalyzer
   def TypeInfer(e: Expr): Option[Type] =
     {
       TypeCheck(e,Map[identifier,Type]()) match
+      { 
+        case Some((t,equations)) =>
+          {
+            Unify(equations) match
+            {
+              case Some(unified) =>
+                {
+                  var newT = t
+                  
+                  for(x <- unified)
+                    {
+                      newT = newT.Substitute(x._1, x._2)
+                    }
+                  
+                  return Some(newT)
+                }
+              case None => None
+            }
+          }
+        case None => None
+      }
+    }
+  
+  def TypeInfer(e: Expr, gamma: Map[identifier,Type]): Option[Type] =
+    {
+      TypeCheck(e,gamma) match
       { 
         case Some((t,equations)) =>
           {
@@ -216,6 +256,22 @@ object SemanticAnalyzer
                   }
                 }
               }
+            case let_in_end(x,e1,e2) =>
+              {
+                Step(e1) match
+                {
+                  case Some(e1Lin) => Some(let_in_end(x,e1Lin,e2))
+                  case None =>
+                    if (e1 IsValue)
+                      {
+                        Some(e2.Substitute(x,e1))
+                      }
+                    else
+                      {
+                        None
+                      }
+                }
+              }
             case _ => None
           }
     }
@@ -344,6 +400,17 @@ object SemanticAnalyzer
       
       return typeSchema(typeSchemasCount.toString)
     }
+
+  def WithTypeSchemas(t: Type): Type =
+    {
+      t match
+      {
+        case natural() => natural()
+        case boolean() => boolean()
+        case function(t1,t2) => function(WithTypeSchemas(t1),WithTypeSchemas(t2))
+        case ftv(id) => NewTypeSchema()
+      }
+    }
 }
 
 abstract case class Type
@@ -356,6 +423,7 @@ abstract case class Type
         case natural() => Set[ftv]()
         case boolean() => Set[ftv]()
         case function(t1,t2) => t1.FTVs ++ t2.FTVs
+        case typeSchema(id) => Set[ftv]()
       }
     }
 
@@ -367,6 +435,7 @@ abstract case class Type
         case boolean() => boolean()
         case function(t1,t2) => function(t1.Substitute(X,t),t2.Substitute(X,t))
         case ftv(id) => if(ftv(id) equals X) t else ftv(id)
+        case typeSchema(id) => typeSchema(id)
       }
     }
 }
