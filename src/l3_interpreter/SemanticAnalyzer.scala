@@ -151,19 +151,13 @@ object SemanticAnalyzer
           {
             // raise propagation rules
             
-            case operation(raise(),raise(),op) => Some(raise())
             case operation(raise(),e2,op) => Some(raise())
             case operation(e1,raise(),op) => Some(raise())
               
-            case if_then_else(raise(),raise(),raise()) => Some(raise())
-            case if_then_else(raise(),raise(),e3) => Some(raise())
-            case if_then_else(raise(),e2,raise()) => Some(raise())
             case if_then_else(raise(),e2,e3) => Some(raise())
-            case if_then_else(e1,raise(),raise()) => Some(raise())
             case if_then_else(e1,raise(),e3) => Some(raise())
             case if_then_else(e1,e2,raise()) => Some(raise())
             
-            case apply_function(raise(),raise()) => Some(raise())
             case apply_function(e1,raise()) => Some(raise())
             
             // regular rules
